@@ -1,67 +1,55 @@
-# Payload Blank Template
+# Payload SDK `fallbackLocale: false` reproduction
 
-This template comes configured with the bare minimum to get started on anything you need.
+The SDK does not send `fallbackLocale: false` to the REST API, so the request
+still uses the fallback locales of the configuration.
 
-## Quick start
+This app is the blank template with SQLite, plus:
 
-This template can be deployed directly from our Cloud hosting and it will setup MongoDB and cloud S3 object storage for media.
+- a localization config where `en` falls back to `fr`
+  ([`src/payload.config.ts`](src/payload.config.ts));
+- a `posts` collection with a localized `title`
+  ([`src/collections/Posts.ts`](src/collections/Posts.ts));
+- a script that reads a post through the SDK
+  ([`scripts/repro.ts`](scripts/repro.ts)).
 
-## Quick Start - local setup
+## Steps
 
-To spin up this template locally, follow these steps:
+1. Install the dependencies and start the dev server:
 
-### Clone
+   ```sh
+   pnpm install
+   pnpm dev
+   ```
 
-After you click the `Deploy` button above, you'll want to have standalone copy of this repo on your machine. If you've already cloned this repo, skip to [Development](#development).
+2. In another terminal, run the script:
 
-### Development
+   ```sh
+   pnpm repro
+   ```
 
-1. First [clone the repo](#clone) if you have not done so already
-2. `cd my-project && cp .env.example .env` to copy the example environment variables. You'll need to add the `MONGODB_URL` from your Cloud project to your `.env` if you want to use S3 storage and the MongoDB database that was created for you.
+The script creates a post with a title in `fr` and no title in `en`. Then it
+reads the post in `en` with the SDK and `fallbackLocale: false`, and with a
+plain `fetch` and `fallback-locale=false`.
 
-3. `pnpm install && pnpm dev` to install dependencies and start the dev server
-4. open `http://localhost:3000` to open the app in your browser
+## Result
 
-That's it! Changes made in `./src` will be reflected in your app. Follow the on-screen instructions to login and create your first admin user. Then check out [Production](#production) once you're ready to build and serve your app, and [Deployment](#deployment) when you're ready to go live.
+```text
+$ pnpm repro
+SDK request URL: http://localhost:3000/api/posts/1?locale=en
+SDK title with fallbackLocale: false (expected null): Titre en français
+REST title with fallback-locale=false: null
+```
 
-#### Docker (Optional)
+The SDK request URL has no `fallback-locale` parameter, so the SDK returns the
+`fr` title. The REST API returns `null` when the request has the parameter.
 
-If you prefer to use Docker for local development instead of a local MongoDB instance, the provided docker-compose.yml file can be used.
+## Cause
 
-To do so, follow these steps:
+`buildSearchParams` in `packages/sdk/src/utilities/buildSearchParams.ts` adds
+`fallback-locale` only when the value is truthy:
 
-- Modify the `MONGODB_URL` in your `.env` file to `mongodb://127.0.0.1/<dbname>`
-- Modify the `docker-compose.yml` file's `MONGODB_URL` to match the above `<dbname>`
-- Run `docker-compose up` to start the database, optionally pass `-d` to run in the background.
-
-## How it works
-
-The Payload config is tailored specifically to the needs of most websites. It is pre-configured in the following ways:
-
-### Collections
-
-See the [Collections](https://payloadcms.com/docs/configuration/collections) docs for details on how to extend this functionality.
-
-- #### Users (Authentication)
-
-  Users are auth-enabled collections that have access to the admin panel.
-
-  For additional help, see the official [Auth Example](https://github.com/payloadcms/payload/tree/3.x/examples/auth) or the [Authentication](https://payloadcms.com/docs/authentication/overview#authentication-overview) docs.
-
-- #### Media
-
-  This is the uploads enabled collection. It features pre-configured sizes, focal point and manual resizing to help you manage your pictures.
-
-### Docker
-
-Alternatively, you can use [Docker](https://www.docker.com) to spin up this template locally. To do so, follow these steps:
-
-1. Follow [steps 1 and 2 from above](#development), the docker-compose file will automatically use the `.env` file in your project root
-1. Next run `docker-compose up`
-1. Follow [steps 4 and 5 from above](#development) to login and create your first admin user
-
-That's it! The Docker instance will help you get up and running quickly while also standardizing the development environment across your teams.
-
-## Questions
-
-If you have any issues or questions, reach out to us on [Discord](https://discord.com/invite/payload) or start a [GitHub discussion](https://github.com/payloadcms/payload/discussions).
+```ts
+if (args.fallbackLocale) {
+  search['fallback-locale'] = String(args.fallbackLocale)
+}
+```
